@@ -1,65 +1,77 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const router = useRouter();
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLoadingProgress((prev) => {
+        const newProgress = prev + 100 / 60; // 60 steps over 3 seconds
+        return newProgress >= 100 ? 100 : newProgress;
+      });
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Redirect when loading reaches 100%
+  useEffect(() => {
+    if (loadingProgress >= 100) {
+      router.push("/profiles");
+    }
+  }, [loadingProgress, router]);
+
+  const segmentStyle = {
+    backgroundImage:
+      "repeating-linear-gradient(to right, white, white 10px, transparent 10px, transparent 12px)",
+    backgroundSize: "12px 100%",
+    width: `${loadingProgress}%`,
+  };
+
+  const winBlue = "rgb(0, 0, 128)";
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+    <div
+      style={{ backgroundColor: winBlue }}
+      className="flex min-h-screen flex-col items-center justify-center font-sans text-white"
+    >
+      {/* Logo */}
+      <div className="mt-24">
         <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
+          src="/main_logo.png"
+          alt="KP Logo"
+          width={500}
+          height={500}
           priority
+          className="w-[500px] h-auto"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+      </div>
+
+      {/* Loading Bar */}
+      <div className="w-[400px] mt-24 mb-3">
+        <div className="h-6 border border-white p-0.5 bg-black/50 shadow-inner">
+          <div
+            style={segmentStyle}
+            className="h-full overflow-hidden transition-all duration-50"
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
+
+      {/* Status Text */}
+      <p className="text-lg tracking-wide mt-2">
+        {loadingProgress < 100 ? "Starting up..." : "Load Complete"}
+      </p>
+
+      {/* Footer */}
+      <div className="absolute bottom-4 text-center text-xs">
+        <p className="font-bold">PortfolioOS</p>
+        <p>© {new Date().getFullYear()} KP. All rights reserved.</p>
+      </div>
     </div>
   );
 }

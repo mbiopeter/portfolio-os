@@ -18,6 +18,39 @@
     --foreground: #ededed;
   }
 }
+/* popup enters from bottom */
+.popup-slide-up {
+  animation: popupSlideUp 0.25s ease forwards;
+}
+
+@keyframes popupSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0px);
+  }
+}
+
+/* popup exits downward */
+.popup-slide-down {
+  animation: popupSlideDown 0.25s ease forwards;
+}
+
+@keyframes popupSlideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0px);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
 
 body {
   background: var(--background);
