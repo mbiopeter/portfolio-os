@@ -21,13 +21,14 @@ type WindowState = {
 };
 
 export type WindowContainerProps = {
-    id: number;
+    id: string | number; // Support string IDs from your OSProvider
     title: string;
-    onClose: (id: number) => void;
-    onFocus: (id: number) => void; // Key for Z-index update in parent
+    onClose: (id: any) => void;
+    onFocus: (id: any) => void;
     children: React.ReactNode;
     initialState?: Partial<WindowState>;
-    zIndex: number; // Controlled by the parent component
+    zIndex: number;
+    activeWindowCount?: number; // Pass the length of openWindows from parent
 };
 
 type DragState = {
@@ -54,7 +55,8 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
     onFocus,
     children,
     initialState = {},
-    zIndex
+    zIndex,
+    activeWindowCount = 0
 }) => {
     const mounted = useRef(false);
     const dragRef = useRef<DragState>({ isDragging: false, offsetX: 0, offsetY: 0 });
@@ -76,10 +78,16 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight - TASKBAR_HEIGHT;
 
+        // --- OFFSET LOGIC ---
+        // Apply a 20px stagger based on how many windows are open
+        const stagger = (activeWindowCount % 10) * 20;
+        
         const initialW = Math.min(defaultWidth, screenWidth * 0.8);
         const initialH = Math.min(defaultHeight, screenHeight * 0.8);
-        const initialX = (screenWidth - initialW) / 2;
-        const initialY = (screenHeight - initialH) / 2;
+        
+        // Centered base position + stagger
+        const initialX = ((screenWidth - initialW) / 2) + stagger;
+        const initialY = ((screenHeight - initialH) / 4) + stagger;
 
         let loadedState: Partial<WindowState> = {};
 
@@ -89,7 +97,7 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
                 loadedState = JSON.parse(savedState);
             }
         } catch (error) {
-            console.error("Failed to load state from local storage:", error);
+            console.error("Failed to load state:", error);
         }
 
         const baseState: WindowState = {
@@ -112,6 +120,7 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
             ...initialState
         };
 
+        // Ensure full height on maximization
         if (finalState.isMaximized) {
             finalState.x = 0;
             finalState.y = 0;
@@ -120,7 +129,7 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
         }
 
         return finalState;
-    }, [initialState, storageKey]);
+    }, [initialState, storageKey, activeWindowCount]);
 
     const [state, setState] = useState<WindowState>(() => getInitialState());
     const [resizeState, setResizeState] = useState<ResizeState>({
@@ -146,12 +155,10 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
                 const stateToSave = JSON.stringify({ x, y, width, height, isMaximized, lastX, lastY, lastWidth, lastHeight });
                 localStorage.setItem(storageKey, stateToSave);
             } catch (error) {
-                console.error("Failed to save state to local storage:", error);
+                console.error("Failed to save state:", error);
             }
         }
     }, [state, storageKey]);
-
-    // --- Handlers ---
 
     const handleFocus = useCallback(() => {
         onFocus(id); 
@@ -179,7 +186,7 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
                     x: 0,
                     y: 0,
                     width: screenWidth,
-                    height: screenHeight
+                    height: screenHeight // Occupies full height minus taskbar
                 };
             }
 
@@ -200,46 +207,36 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
         if (e.button !== 0) return;
         handleFocus();
 
-        let newX = state.x;
-        let newY = state.y;
-        let newWidth = state.width;
-        let newHeight = state.height;
+        let currentX = state.x;
+        let currentY = state.y;
+        let currentW = state.width;
+        let currentH = state.height;
 
         let offsetX = e.clientX - state.x;
         let offsetY = e.clientY - state.y;
 
         if (state.isMaximized) {
-            newWidth = state.lastWidth;
-            newHeight = state.lastHeight;
-
+            currentW = state.lastWidth;
+            currentH = state.lastHeight;
             const ratio = e.clientX / state.width;
-
-            newX = e.clientX - newWidth * ratio;
-            newY = 0;
+            currentX = e.clientX - currentW * ratio;
+            currentY = 0;
 
             setState(prev => ({
                 ...prev,
                 isMaximized: false,
-                width: newWidth,
-                height: newHeight,
-                x: newX,
-                y: newY,
-                lastX: newX,
-                lastY: newY,
-                lastWidth: newWidth,
-                lastHeight: newHeight,
+                width: currentW,
+                height: currentH,
+                x: currentX,
+                y: currentY,
             }));
 
-            offsetX = e.clientX - newX;
-            offsetY = e.clientY - newY;
+            offsetX = e.clientX - currentX;
+            offsetY = e.clientY - currentY;
         }
 
         dragRef.current = { isDragging: true, offsetX, offsetY };
         e.preventDefault();
-
-        if (windowRef.current) {
-            windowRef.current.style.transition = 'none';
-        }
     }, [state, handleFocus]);
 
     const handleDrag = useCallback((e: MouseEvent) => {
@@ -252,12 +249,8 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
     }, []);
 
     const handleDragEnd = useCallback(() => {
-        dragRef.current = { isDragging: false, offsetX: 0, offsetY: 0 };
+        dragRef.current.isDragging = false;
         setState(prev => ({ ...prev, lastX: prev.x, lastY: prev.y }));
-
-        if (windowRef.current) {
-            windowRef.current.style.transition = '';
-        }
     }, []);
 
     const handleResizeStart = useCallback((e: React.MouseEvent, direction: string) => {
@@ -278,90 +271,83 @@ const WindowContainer: React.FC<WindowContainerProps> = ({
     const handleResize = useCallback((e: MouseEvent) => {
         if (!resizeState.isResizing || !resizeState.direction) return;
 
-        let { x, y, width, height } = state;
         const { direction, startX, startY, startW, startH } = resizeState;
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
 
-        if (direction.includes("top")) { height = Math.max(MIN_HEIGHT, startH - dy); y = startY + startH - height; }
-        if (direction.includes("bottom")) { height = Math.max(MIN_HEIGHT, startH + dy); }
-        if (direction.includes("left")) { width = Math.max(MIN_WIDTH, startW - dx); x = startX + startW - width; }
-        if (direction.includes("right")) { width = Math.max(MIN_WIDTH, startW + dx); }
-
-        setState(prev => ({ ...prev, x, y, width, height }));
-    }, [resizeState, state]);
-
-    const handleResizeEnd = useCallback(() => {
-        setResizeState({ isResizing: false, direction: null, startX: 0, startY: 0, startW: 0, startH: 0 });
-        setState(prev => ({ ...prev, lastWidth: prev.width, lastHeight: prev.height, lastX: prev.x, lastY: prev.y }));
-    }, []);
+        setState(prev => {
+            let { x, y, width, height } = prev;
+            if (direction.includes("top")) { height = Math.max(MIN_HEIGHT, startH - dy); y = startY + startH - height; }
+            if (direction.includes("bottom")) { height = Math.max(MIN_HEIGHT, startH + dy); }
+            if (direction.includes("left")) { width = Math.max(MIN_WIDTH, startW - dx); x = startX + startW - width; }
+            if (direction.includes("right")) { width = Math.max(MIN_WIDTH, startW + dx); }
+            return { ...prev, x, y, width, height };
+        });
+    }, [resizeState]);
 
     useEffect(() => {
         const onMouseMove = (e: MouseEvent) => { handleDrag(e); handleResize(e); };
-        const onMouseUp = () => { handleDragEnd(); handleResizeEnd(); };
+        const onMouseUp = () => { handleDragEnd(); setResizeState(prev => ({ ...prev, isResizing: false })); };
         document.addEventListener("mousemove", onMouseMove);
         document.addEventListener("mouseup", onMouseUp);
         return () => {
             document.removeEventListener("mousemove", onMouseMove);
             document.removeEventListener("mouseup", onMouseUp);
         };
-    }, [handleDrag, handleDragEnd, handleResize, handleResizeEnd]);
+    }, [handleDrag, handleDragEnd, handleResize]);
 
     if (state.isMinimized) return null;
-
-    const borderRadius = state.isMaximized ? 0 : 8;
 
     return (
         <div
             ref={windowRef}
             onMouseDown={handleFocus}
-            className="fixed bg-white shadow-2xl flex flex-col border border-gray-300 transition-all"
+            className="fixed bg-white shadow-2xl flex flex-col border border-gray-300 overflow-hidden"
             style={{
                 left: state.x,
                 top: state.y,
                 width: state.width,
                 height: state.height,
                 zIndex,
-                borderRadius,
+                borderRadius: state.isMaximized ? 0 : 10,
                 cursor: dragRef.current.isDragging ? "grabbing" : "default",
-                transition: dragRef.current.isDragging ? 'none' : 'all 0.1s ease-out'
+                transition: (dragRef.current.isDragging || resizeState.isResizing) ? 'none' : 'all 0.2s cubic-bezier(0.2, 0, 0, 1)'
             }}>
-            {!state.isMaximized &&
-                ["top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right"].map(dir => (
-                    <div
-                        key={dir}
-                        onMouseDown={(e) => handleResizeStart(e, dir)}
-                        className="absolute z-20"
-                        style={{
-                            ...(dir === "top" && { top: -4, left: 8, right: 8, height: 8, cursor: "n-resize" }),
-                            ...(dir === "bottom" && { bottom: -4, left: 8, right: 8, height: 8, cursor: "s-resize" }),
-                            ...(dir === "left" && { left: -4, top: 8, bottom: 8, width: 8, cursor: "w-resize" }),
-                            ...(dir === "right" && { right: -4, top: 8, bottom: 8, width: 8, cursor: "e-resize" }),
-                            ...(dir === "top-left" && { top: -6, left: -6, width: 12, height: 12, cursor: "nwse-resize" }),
-                            ...(dir === "top-right" && { top: -6, right: -6, width: 12, height: 12, cursor: "nesw-resize" }),
-                            ...(dir === "bottom-left" && { bottom: -6, left: -6, width: 12, height: 12, cursor: "nesw-resize" }),
-                            ...(dir === "bottom-right" && { bottom: -6, right: -6, width: 12, height: 12, cursor: "nwse-resize" })
-                        }}
-                    />
-                ))
-            }
+            
+            {/* Resizers */}
+            {!state.isMaximized && ["top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"].map(dir => (
+                <div
+                    key={dir}
+                    onMouseDown={(e) => handleResizeStart(e, dir)}
+                    className="absolute z-50"
+                    style={{
+                        ...(dir === "top" && { top: 0, left: 5, right: 5, height: 5, cursor: "n-resize" }),
+                        ...(dir === "bottom" && { bottom: 0, left: 5, right: 5, height: 5, cursor: "s-resize" }),
+                        ...(dir === "left" && { left: 0, top: 5, bottom: 5, width: 5, cursor: "w-resize" }),
+                        ...(dir === "right" && { right: 0, top: 5, bottom: 5, width: 5, cursor: "e-resize" }),
+                        ...(dir === "top-left" && { top: 0, left: 0, width: 10, height: 10, cursor: "nwse-resize" }),
+                        ...(dir === "top-right" && { top: 0, right: 0, width: 10, height: 10, cursor: "nesw-resize" }),
+                        ...(dir === "bottom-left" && { bottom: 0, left: 0, width: 10, height: 10, cursor: "nesw-resize" }),
+                        ...(dir === "bottom-right" && { bottom: 0, right: 0, width: 10, height: 10, cursor: "nwse-resize" })
+                    }}
+                />
+            ))}
 
+            {/* Title Bar */}
             <div
-                className="shrink-0 flex items-center h-9 px-3 select-none bg-gray-100 border-b border-gray-300"
+                className="shrink-0 flex items-center h-10 px-4 select-none bg-gray-50/80 backdrop-blur-md border-b border-gray-200"
                 onMouseDown={handleDragStart}
-                style={{ cursor: "default", borderTopLeftRadius: borderRadius, borderTopRightRadius: borderRadius }}>
-                <div className="flex items-center gap-2">
-                    <button onClick={handleClose} className="w-3.5 h-3.5 rounded-full bg-[#ff5f57] border border-[#cc4c48] hover:brightness-110"/>
-                    <button onClick={handleMinimize} className="w-3.5 h-3.5 rounded-full bg-[#ffbd2e] border border-[#a07b2b] hover:brightness-110"/>
-                    <button onClick={handleMaximize} className="w-3.5 h-3.5 rounded-full bg-[#28c940] border border-[#1f7b2f] hover:brightness-110"/>
-                    <span className="ml-2 font-medium text-gray-700">{title}</span>
+                onDoubleClick={handleMaximize}>
+                <div className="flex items-center gap-2 mr-4">
+                    <button onClick={handleClose} className="w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 transition-colors"/>
+                    <button onClick={handleMinimize} className="w-3 h-3 rounded-full bg-[#ffbd2e] hover:bg-[#ffbd2e]/80 transition-colors"/>
+                    <button onClick={handleMaximize} className="w-3 h-3 rounded-full bg-[#28c940] hover:bg-[#28c940]/80 transition-colors"/>
                 </div>
+                <span className="text-sm font-semibold text-gray-600 truncate">{title}</span>
             </div>
 
-            <div className="grow p-4 overflow-auto text-black" onMouseDown={(e) =>{
-                    handleFocus();
-                    e.stopPropagation()
-                }}>
+            {/* Content Area */}
+            <div className="grow overflow-auto bg-white relative">
                 {children}
             </div>
         </div>

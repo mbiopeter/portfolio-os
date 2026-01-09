@@ -48,7 +48,7 @@ export default function Home() {
           width={500}
           height={500}
           priority
-          className="w-[500px] h-auto"
+          className="w-[500px] h-auto -z-10"
         />
       </div>
 
