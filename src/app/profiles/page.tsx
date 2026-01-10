@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation"; 
-import Taskbar from "@/components/Taskbar";
 
 const MicaStyle = {
     backdropFilter: 'blur(30px) saturate(150%)',
@@ -93,4 +92,5 @@ export default function LoginScreen() {
             </div>
         </div>
     );
+
 }
